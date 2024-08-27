@@ -31,19 +31,17 @@
 ;
 ; Uses af, bc, de, hl
 ; ===============================================================
-
 zx7_decompress:
-.ifdef ZX7ToVRAM
-.ifndef ZX7ToVRAMScreenOn
-  ; Set VRAM address
-  ld c,$bf
-  out (c),e
-  out (c),d
-  dec c ; data port
-  ; interruptable version sets the address later
-.endif
-.endif
-
+#ifdef ZX7ToVRAM
+  #ifndef ZX7ToVRAMScreenOn
+    ; Set VRAM address
+    ld c, $bf
+    out (c), e
+    out (c), d
+    dec c ; data port
+    ; interruptable version sets the address later
+  #endif
+#endif
 _signalbit:
   ld a, 1<<7 ; Signal bit for flags byte
   ; This is a trick whereby we can cycle a flags byte in a through the carry flag,
@@ -54,32 +52,29 @@ _signalbit:
   ; add a, a ; get MSB into carry
   ; jr z, _nextFlagsByte ; get new flags byte if necessary (and shift it into carry)
   ; <use the bit in carry>
-
--:; First byte is always literal
-.ifdef ZX7ToVRAM
-.ifdef ZX7ToVRAMScreenOn
-  di
-  ; Set VRAM address
+- ; First byte is always literal
+#ifdef ZX7ToVRAM
+  #ifdef ZX7ToVRAMScreenOn
+    di
+    ; Set VRAM address
 _setvramaddress:
-  ld c,$bf
-  out (c),e
-  push ix ; Delay
-  pop ix
-  out (c),d
-  dec c ; data port
-.endif
-  outi ; increments hl
-  inc de
-.else
+    ld c, $bf
+    out (c), e
+    push ix ; Delay
+    pop ix
+    out (c), d
+    dec c ; data port
+  #endif
+    outi ; increments hl
+    inc de
+#else
 _loadliteral:
-  ldi
-.endif
-
---: ; Main loop
-.ifdef ZX7ToVRAMScreenOn
-  ei
-.endif
-
+    ldi
+#endif
+-- ; Main loop
+#ifdef ZX7ToVRAMScreenOn
+    ei
+#endif
 _getnextflagbit:
   add a, a
   call z, _nextFlagsByte
@@ -103,125 +98,111 @@ _sequence:
     ; determine number of bits used for length (Elias gamma coding)
     ld b, 1 ; length result
     ld d, 0 ; d = 0
-    
--:  ; Count how many 0 bits we have in the flags sequence
+- ; Count how many 0 bits we have in the flags sequence
     inc d
     add a, a
     call z, _nextFlagsByte
     jr nc, -
     jp +
-
     ; determine length
--:  add a, a
+- add a, a
     call z, _nextFlagsByte
     rl b
     jp c, _done ; check end marker
-+:  dec d
++ dec d
     jr nz, -
     inc b      ; adjust length
 _gotlength:
-
     ; determine offset
     ld e, (hl) ; load offset flag (1 bit) + offset value (7 bits)
     inc hl
-.ifdef ZX7NoUndocumented
+#ifdef ZX7NoUndocumented
     sla e
     inc e
-.else
+#else
     sll e ; Undocumented instruction! Shifts into carry, inserts 1 in LSB
-.endif
+#endif
     jr nc, + ; if offset flag is set, load 4 extra bits
-
     add a, a
     call z, _nextFlagsByte
     rl d
-
     add a, a
     call z, _nextFlagsByte
     rl d
-
     add a, a
     call z, _nextFlagsByte
     rl d
-
     add a, a
     call z, _nextFlagsByte
     ccf
     jr c, +
     inc d
-    
-+:  rr e       ; insert inverted fourth bit into E
++ rr e       ; insert inverted fourth bit into E
 _gotoffsetinde:
-
     ; copy previous sequence
     ex (sp), hl   ; store source, restore destination
     push hl       ; store destination
       sbc hl, de  ; HL = destination - offset - 1
     pop de        ; DE = destination
-
-.ifdef ZX7ToVRAM
+#ifdef ZX7ToVRAM
 _ldirvramtovram:
     ; ldir vram -> vram
     push af ; need to preserve carry
       ; Make hl a read address
       res 6, h
       inc c ; ld c, $bf
-.ifdef ZX7ToVRAMScreenOn
-      di
-.endif
--:    out (c),l
-.ifdef ZX7ToVRAMScreenOn
-      push ix
-      pop ix
-.endif
-      out (c),h
+  #ifdef ZX7ToVRAMScreenOn
+        di
+  #endif
+- out (c), l
+  #ifdef ZX7ToVRAMScreenOn
+        push ix
+        pop ix
+  #endif
+      out (c), h
       inc hl ; 6 cycles
-.ifdef ZX7ToVRAMScreenOn
-      ; We want to waste 20 cycles, in as few bytes as possible, with no bad side ffects
-      add a,(hl) ; 1/7 - a is not needed
-      sub (hl)   ; 1/7
-      inc hl     ; 1/6 - undone later
-.endif
-      in a,($be)
-.ifdef ZX7ToVRAMScreenOn
-      push ix
-      pop ix
-.endif
-      out (c),e
-.ifdef ZX7ToVRAMScreenOn
-      push ix
-      pop ix
-.endif
-      out (c),d
+  #ifdef ZX7ToVRAMScreenOn
+        ; We want to waste 20 cycles, in as few bytes as possible, with no bad side effects
+        add a, (hl) ; 1/7 - a is not needed
+        sub (hl)   ; 1/7
+        inc hl     ; 1/6 - undone later
+  #endif
+      in a, ($be)
+  #ifdef ZX7ToVRAMScreenOn
+        push ix
+        pop ix
+  #endif
+      out (c), e
+  #ifdef ZX7ToVRAMScreenOn
+        push ix
+        pop ix
+  #endif
+      out (c), d
       inc de ; 6 cycles
-.ifdef ZX7ToVRAMScreenOn
-      ; See above
-      add a,(hl) ; 1/7 - a needs to be restored
-      sub (hl)   ; 1/7 - ...here
-      dec hl     ; 1/6 - undoing extra inc      
-.endif
-      out ($be),a
-.ifdef ZX7ToVRAMScreenOn
-      push ix
-      pop ix
-.endif
+  #ifdef ZX7ToVRAMScreenOn
+        ; See above
+        add a, (hl) ; 1/7 - a needs to be restored
+        sub (hl)   ; 1/7 - ...here
+        dec hl     ; 1/6 - undoing extra inc      
+  #endif
+      out ($be), a
+  #ifdef ZX7ToVRAMScreenOn
+        push ix
+        pop ix
+  #endif
       djnz -
     pop af
-
     dec c ; ld c, $be ; restore VRAM write port
-.else
+#else
     ldir
-.endif
-
+#endif
   pop hl      ; restore source address (compressed data)
   jp nc, --
-
 _nextFlagsByte:
   ld a, (hl)  ; Else load the next byte
   inc hl
   rla         ; And push that into the carry bit
   ret
-
 _done:
   pop hl
   ret
